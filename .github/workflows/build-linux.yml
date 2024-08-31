@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
     - name: Checkout Repository
-          
+      uses: actions/checkout@v4
+
     - name: Create symbolic link for Makefile
       run: ln -s Makefile.Linux Makefile
       
