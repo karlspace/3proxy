@@ -74,6 +74,37 @@ void * threadfunc (void *p) {
 #endif
 #endif
 
+	if(param->srv->haproxy){
+	    char buf[128];
+	    int i;
+	    i = sockgetlinebuf(param, CLIENT, (unsigned char *)buf, sizeof(buf)-1, '\n', conf.timeouts[STRING_S]);
+	    if(i > 12 && !strncasecmp(buf, "PROXY TCP", 9)){
+		char *token, *token2=NULL;
+		unsigned short u1=0, u2=0;
+		buf[i] = 0;
+		token = strchr(buf, ' ');
+		if(token) token = strchr(token+1, ' ');
+		if(token) token++;
+		if(token) token2 = strchr(token+1, ' ');
+		if(token2) {
+		    *token2 = 0;
+		    getip46(46, (unsigned char*) token, (struct sockaddr *)&param->sincr);
+		    token = token2+1;
+		    token2 = strchr(token, ' ');
+		}
+		if(token2) {
+		    *token2 = 0;
+		    getip46(46, (unsigned char *) token, (struct sockaddr *)&param->sincl);
+		    token = token2+1;
+		    token2 = strchr(token, ' ');
+		}
+		if(token){
+		    sscanf(token,"%hu%hu", &u1, &u2);
+		    if(u1) *SAPORT(&param->sincr) = htons(u1);
+		    if(u2) *SAPORT(&param->sincl) = htons(u1);
+		}
+	    }
+	}
 	((struct clientparam *) p)->srv->pf((struct clientparam *)p);
  }
 #ifdef _WIN32
@@ -83,6 +114,15 @@ void * threadfunc (void *p) {
 #endif
 }
 #undef param
+
+int pushthreadinit(){
+    return 
+#ifdef _WIN32
+    WriteFile(conf.threadinit[1], "1", 1, NULL, NULL);
+#else
+    write(conf.threadinit[1], "1", 1);
+#endif
+}
 
 
 struct socketoptions sockopts[] = {
@@ -417,6 +457,9 @@ int MODULEMAINFUNC (int argc, char** argv){
 		 case 'h':
 			hostname = argv[i] + 2;
 			break;
+		 case 'H':
+			srv.haproxy=1;
+			break;
 		 case 'c':
 			srv.requirecert = 1;
 			if(isdigit(argv[i][2])) srv.requirecert = atoi(argv[i]+2);
@@ -492,7 +535,7 @@ int MODULEMAINFUNC (int argc, char** argv){
 	if (error || i!=argc) {
 #ifndef STDMAIN
 		haveerror = 1;
-		conf.threadinit = 0;
+		pushthreadinit();
 #endif
 		fprintf(stderr, "%s of %s\n"
 			"Usage: %s options\n"
@@ -524,7 +567,7 @@ int MODULEMAINFUNC (int argc, char** argv){
 	if (error || argc != i+3 || *argv[i]=='-'|| (*SAPORT(&srv.intsa) = htons((unsigned short)atoi(argv[i])))==0 || (srv.targetport = htons((unsigned short)atoi(argv[i+2])))==0) {
 #ifndef STDMAIN
 		haveerror = 1;
-		conf.threadinit = 0;
+		pushthreadinit();
 #endif
 		fprintf(stderr, "%s of %s\n"
 			"Usage: %s options"
@@ -590,7 +633,7 @@ int MODULEMAINFUNC (int argc, char** argv){
 #ifndef STDMAIN
 
  copyfilter(conf.filters, &srv);
- conf.threadinit = 0;
+ pushthreadinit();
 
 
 #endif
@@ -1380,6 +1423,8 @@ FILTER_ACTION handlepredatflt(struct clientparam *cparam){
 	FILTER_ACTION action;
 	int i;
 
+	if(cparam->predatdone) return PASS;
+	cparam->predatdone = 1;
 	for(i=0; i<cparam->npredatfilters ;i++){
 		action =  (*cparam->predatfilters[i]->filter->filter_predata)(cparam->predatfilters[i]->data, cparam);
 		if(action!=CONTINUE) return action;

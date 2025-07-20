@@ -7,6 +7,7 @@
 
 #include "../../structures.h"
 #include <string.h>
+#define PCRE_STATIC
 #include "pcre.h"
 
 #ifdef  __cplusplus
